@@ -1,8 +1,9 @@
 # OS Jackfruit Container Runtime
 
 ### 1. Team Information
-. Ipsa Mishra - PES1UG24CS191
-. Janhavi Ramakrishnan - PES1UG24CS198
+
+- **Ipsa Mishra** – PES1UG24CS191  
+- **Janhavi Ramakrishnan** – PES1UG24CS198  
 
 ### 2. Set Up Your VM
 
