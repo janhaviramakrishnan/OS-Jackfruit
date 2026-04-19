@@ -1,23 +1,8 @@
-# Multi-Container Runtime
+# OS Jackfruit Container Runtime
 
-A lightweight Linux container runtime in C with a long-running supervisor and a kernel-space memory monitor.
-
-Read [`project-guide.md`](project-guide.md) for the full project specification.
-
----
-
-## Getting Started
-
-### 1. Fork the Repository
-
-1. Go to [github.com/shivangjhalani/OS-Jackfruit](https://github.com/shivangjhalani/OS-Jackfruit)
-2. Click **Fork** (top-right)
-3. Clone your fork:
-
-```bash
-git clone https://github.com/<your-username>/OS-Jackfruit.git
-cd OS-Jackfruit
-```
+### 1. Team Information
+. Ipsa Mishra - PES1UG24CS191
+. Janhavi Ramakrishnan - PES1UG24CS198
 
 ### 2. Set Up Your VM
 
