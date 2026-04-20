@@ -123,86 +123,52 @@ Processes are terminated successfully using pkill, and system verification confi
 ## 4. Engineering Analysis
 
 **1. Process Isolation and Namespaces**
+Containers are implemented as isolated processes. Each container runs with its own root filesystem and execution context, preventing interference with other containers or the host.
 
-Modern operating systems provide isolation between processes using mechanisms such as namespaces. In this project, each container is created as a separate process with isolated execution context.
-
-The container runtime uses process-level isolation so that each container:
-- Has its own root filesystem (via `chroot` or equivalent)
-- Runs independently of other containers
-- Does not interfere with host processes
-
-This demonstrates how operating systems enforce isolation boundaries, ensuring that processes cannot access each other's resources without explicit permission.
+This demonstrates how operating systems enforce isolation between processes and protect system resources.
 
 **2. Memory Monitoring and Resource Limits**
+A kernel module monitors memory usage (RSS) of container processes using a periodic timer.
 
-The Linux kernel provides mechanisms to observe and control resource usage of processes. In this project, a custom kernel module periodically monitors memory usage (RSS) of registered container processes.
+Two limits are enforced:
+- **Soft Limit**: triggers a warning
+- **Hard Limit**: terminates the process
 
-Two types of limits are enforced:
-- **Soft Limit**: When exceeded, a warning is logged
-- **Hard Limit**: When exceeded, the process is terminated
-
-This demonstrates:
-- Kernel-level visibility into process memory usage
-- Enforcement of resource constraints
-- The distinction between advisory (soft) and enforced (hard) limits
-
-The use of a timer inside the kernel module shows how periodic monitoring is implemented in operating systems.
+This illustrates kernel-level resource monitoring and the difference between advisory and enforced limits.
 
 **3. Kernel–User Space Interaction (IOCTL)**
+Communication between user space and kernel space is implemented using `ioctl`.
 
-The project uses an `ioctl` interface for communication between user-space (engine CLI) and kernel-space (monitor module).
+The runtime sends container details (PID, limits, ID) to the kernel module, which performs monitoring and enforcement.
 
-This interaction allows:
-- Registering container processes for monitoring
-- Passing structured data (PID, limits, container ID)
-- Triggering kernel-side actions
-
-This reflects a common OS design pattern where:
-- User space requests services
-- Kernel space enforces policies and accesses hardware-level data
+This reflects how user programs request services while the kernel controls resources.
 
 **4. Inter-Process Communication and Logging Pipeline**
+A bounded-buffer producer–consumer model is used for logging.
 
-The system implements a bounded-buffer logging mechanism using producer–consumer synchronization.
-- **Producers**: Container processes generating logs
-- **Consumer**: Logging thread writing logs to file
+- Producers generate logs  
+- A consumer writes logs to file  
 
-This demonstrates:
-- Inter-process communication (IPC)
-- Synchronization using mutexes and condition variables
-- Prevention of race conditions and buffer overflow
-
-The bounded buffer ensures controlled data flow and models real-world logging systems used in distributed environments.
+This demonstrates IPC, synchronization using mutexes, and safe data sharing without race conditions.
 
 **5. CPU Scheduling and Process Priorities**
-The Linux scheduler allocates CPU time among competing processes based on priority (nice values).
+CPU scheduling is influenced by process priority (nice values).
 
-In the scheduling experiment:
-- Multiple CPU-bound processes were executed
-- Their priorities were modified using `renice`
-- CPU usage differences were observed using `top`
+In the experiment:
+- Multiple CPU-bound processes were run
+- Priorities were adjusted using `renice`
+- CPU allocation differences were observed
 
-Processes with:
-- Lower nice value → higher priority → more CPU time  
-- Higher nice value → lower priority → less CPU time  
-
-This demonstrates:
-- Fair scheduling policies
-- Priority-based CPU allocation
-- How the scheduler balances workload across processes
-
-Pinning processes to a single CPU core further highlights contention and scheduling decisions.
+Higher priority processes received more CPU time, demonstrating scheduler behavior under contention.
 
 ### Summary
 
-This project integrates multiple core operating system concepts:
-- Process isolation through containerization
-- Kernel-level resource monitoring and enforcement
-- User–kernel communication via ioctl
-- Synchronization using producer–consumer patterns
-- Scheduling behavior influenced by process priority
-
-Together, these components illustrate how modern operating systems manage processes, resources, and system stability.
+This project demonstrates key OS concepts:
+- Process isolation
+- Resource monitoring and limits
+- Kernel–user communication
+- Synchronization via IPC
+- Priority-based scheduling
 
 ### 5. Understand the Boilerplate
 
