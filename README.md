@@ -120,19 +120,89 @@ CPU-bound processes pinned to a single core demonstrate scheduling behavior wher
 Processes are terminated successfully using pkill, and system verification confirms that no residual CPU-intensive processes remain
 
 
-### 4. Prepare the Root Filesystem
+## 4. Engineering Analysis
 
-```bash
-mkdir rootfs-base
-wget https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.3-x86_64.tar.gz
-tar -xzf alpine-minirootfs-3.20.3-x86_64.tar.gz -C rootfs-base
+**1. Process Isolation and Namespaces**
 
-# Make one writable copy per container you plan to run
-cp -a ./rootfs-base ./rootfs-alpha
-cp -a ./rootfs-base ./rootfs-beta
-```
+Modern operating systems provide isolation between processes using mechanisms such as namespaces. In this project, each container is created as a separate process with isolated execution context.
 
-Do not commit `rootfs-base/` or `rootfs-*` directories to your repository.
+The container runtime uses process-level isolation so that each container:
+- Has its own root filesystem (via `chroot` or equivalent)
+- Runs independently of other containers
+- Does not interfere with host processes
+
+This demonstrates how operating systems enforce isolation boundaries, ensuring that processes cannot access each other's resources without explicit permission.
+
+**2. Memory Monitoring and Resource Limits**
+
+The Linux kernel provides mechanisms to observe and control resource usage of processes. In this project, a custom kernel module periodically monitors memory usage (RSS) of registered container processes.
+
+Two types of limits are enforced:
+- **Soft Limit**: When exceeded, a warning is logged
+- **Hard Limit**: When exceeded, the process is terminated
+
+This demonstrates:
+- Kernel-level visibility into process memory usage
+- Enforcement of resource constraints
+- The distinction between advisory (soft) and enforced (hard) limits
+
+The use of a timer inside the kernel module shows how periodic monitoring is implemented in operating systems.
+
+**3. Kernel–User Space Interaction (IOCTL)**
+
+The project uses an `ioctl` interface for communication between user-space (engine CLI) and kernel-space (monitor module).
+
+This interaction allows:
+- Registering container processes for monitoring
+- Passing structured data (PID, limits, container ID)
+- Triggering kernel-side actions
+
+This reflects a common OS design pattern where:
+- User space requests services
+- Kernel space enforces policies and accesses hardware-level data
+
+**4. Inter-Process Communication and Logging Pipeline**
+
+The system implements a bounded-buffer logging mechanism using producer–consumer synchronization.
+- **Producers**: Container processes generating logs
+- **Consumer**: Logging thread writing logs to file
+
+This demonstrates:
+- Inter-process communication (IPC)
+- Synchronization using mutexes and condition variables
+- Prevention of race conditions and buffer overflow
+
+The bounded buffer ensures controlled data flow and models real-world logging systems used in distributed environments.
+
+**5. CPU Scheduling and Process Priorities**
+The Linux scheduler allocates CPU time among competing processes based on priority (nice values).
+
+In the scheduling experiment:
+- Multiple CPU-bound processes were executed
+- Their priorities were modified using `renice`
+- CPU usage differences were observed using `top`
+
+Processes with:
+- Lower nice value → higher priority → more CPU time  
+- Higher nice value → lower priority → less CPU time  
+
+This demonstrates:
+- Fair scheduling policies
+- Priority-based CPU allocation
+- How the scheduler balances workload across processes
+
+Pinning processes to a single CPU core further highlights contention and scheduling decisions.
+
+### Summary
+
+This project integrates multiple core operating system concepts:
+- Process isolation through containerization
+- Kernel-level resource monitoring and enforcement
+- User–kernel communication via ioctl
+- Synchronization using producer–consumer patterns
+- Scheduling behavior influenced by process priority
+
+Together, these components illustrate how modern operating systems manage processes, resources, and system stability.
 
 ### 5. Understand the Boilerplate
 
