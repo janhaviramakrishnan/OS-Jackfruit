@@ -123,11 +123,13 @@ Processes are terminated successfully using pkill, and system verification confi
 ## 4. Engineering Analysis
 
 **1. Process Isolation and Namespaces**
+
 Containers are implemented as isolated processes. Each container runs with its own root filesystem and execution context, preventing interference with other containers or the host.
 
 This demonstrates how operating systems enforce isolation between processes and protect system resources.
 
 **2. Memory Monitoring and Resource Limits**
+
 A kernel module monitors memory usage (RSS) of container processes using a periodic timer.
 
 Two limits are enforced:
@@ -137,6 +139,7 @@ Two limits are enforced:
 This illustrates kernel-level resource monitoring and the difference between advisory and enforced limits.
 
 **3. Kernel–User Space Interaction (IOCTL)**
+
 Communication between user space and kernel space is implemented using `ioctl`.
 
 The runtime sends container details (PID, limits, ID) to the kernel module, which performs monitoring and enforcement.
@@ -144,6 +147,7 @@ The runtime sends container details (PID, limits, ID) to the kernel module, whic
 This reflects how user programs request services while the kernel controls resources.
 
 **4. Inter-Process Communication and Logging Pipeline**
+
 A bounded-buffer producer–consumer model is used for logging.
 
 - Producers generate logs  
@@ -152,6 +156,7 @@ A bounded-buffer producer–consumer model is used for logging.
 This demonstrates IPC, synchronization using mutexes, and safe data sharing without race conditions.
 
 **5. CPU Scheduling and Process Priorities**
+
 CPU scheduling is influenced by process priority (nice values).
 
 In the experiment:
@@ -170,22 +175,41 @@ This project demonstrates key OS concepts:
 - Synchronization via IPC
 - Priority-based scheduling
 
-### 5. Understand the Boilerplate
+## 5. Design Decisions and Tradeoffs
 
-The `boilerplate/` folder contains starter files:
+**1. Namespace Isolation**
 
-| File                   | Purpose                                             |
-| ---------------------- | --------------------------------------------------- |
-| `engine.c`             | User-space runtime and supervisor skeleton          |
-| `monitor.c`            | Kernel module skeleton                              |
-| `monitor_ioctl.h`      | Shared ioctl command definitions                    |
-| `Makefile`             | Build targets for both user-space and kernel module |
-| `cpu_hog.c`            | CPU-bound test workload                             |
-| `io_pulse.c`           | I/O-bound test workload                             |
-| `memory_hog.c`         | Memory-consuming test workload                      |
-| `environment-check.sh` | VM environment preflight check                      |
+- **Design Choice**: Used process-level isolation with separate root filesystems (`chroot`) for each container  
+- **Tradeoff**: Weaker isolation compared to full namespace + cgroup-based containers  
+- **Justification**: Simpler to implement while still demonstrating core isolation concepts effectively  
 
-Use these as your starting point. You are free to restructure the repository however you want — the submission requirements are listed in the project guide.
+**2. Supervisor Architecture**
+
+- **Design Choice**: Centralized supervisor to manage container lifecycle and coordination  
+- **Tradeoff**: Single point of failure  
+- **Justification**: Simplifies control, debugging, and communication between components  
+
+**3. IPC and Logging Pipeline**
+
+- **Design Choice**: Bounded-buffer producer–consumer model with mutex-based synchronization  
+- **Tradeoff**: Added synchronization overhead  
+- **Justification**: Ensures safe and ordered logging without race conditions or data loss  
+
+**4. Kernel Monitor**
+
+- **Design Choice**: Periodic polling of process memory using a kernel timer  
+- **Tradeoff**: Slight delay in detecting limit violations compared to event-driven monitoring  
+- **Justification**: Easier to implement and sufficient for demonstrating monitoring and enforcement  
+
+**5. Scheduling Experiments**
+
+- **Design Choice**: Used CPU-bound workloads with `nice/renice` to observe scheduling behavior  
+- **Tradeoff**: Results depend on system conditions (e.g., number of CPU cores)  
+- **Justification**: Provides a simple and clear way to demonstrate priority-based CPU allocation  
+
+### Summary
+
+The design prioritizes simplicity and clarity over full production-level features, enabling effective demonstration of key operating system concepts.
 
 ### 6. Build and Verify
 
