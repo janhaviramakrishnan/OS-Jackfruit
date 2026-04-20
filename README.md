@@ -211,41 +211,37 @@ This project demonstrates key OS concepts:
 
 The design prioritizes simplicity and clarity over full production-level features, enabling effective demonstration of key operating system concepts.
 
-### 6. Build and Verify
+## 6. Scheduler Experiment Results
 
-```bash
-cd boilerplate
-make
-```
+### Observed Output
 
-If this compiles without errors, your environment is ready.
+<img width="1280" height="800" alt="ss_last" src="https://github.com/user-attachments/assets/709dc98b-454a-4316-ba58-59cfeb9c1578" />
 
-### 7. GitHub Actions Smoke Check
+### Measured Data
 
-Your fork will inherit a minimal GitHub Actions workflow from this repository.
+| PID  | Nice (NI) | CPU Usage (%) |
+|------|----------|---------------|
+| 2511 | 0        | ~32%          |
+| 2509 | 0        | ~32%          |
+| 2510 | 0        | ~32%          |
+| 2512 | 10       | ~3%           |
 
-That workflow only performs CI-safe checks:
 
-- `make -C boilerplate ci`
-- user-space binary compilation (`engine`, `memory_hog`, `cpu_hog`, `io_pulse`)
-- `./boilerplate/engine` with no arguments must print usage and exit with a non-zero status
+### Comparison
 
-The CI-safe build command is:
+- Processes with **NI = 0** receive significantly higher CPU time  
+- The process with **NI = 10** receives much less CPU time  
 
-```bash
-make -C boilerplate ci
-```
 
-This smoke check does not test kernel-module loading, supervisor runtime behavior, or container execution.
+### Analysis
 
----
+This experiment demonstrates that the Linux scheduler:
+- Allocates CPU based on process priority (nice value)  
+- Favors higher priority processes under contention  
+- Reduces CPU share for lower priority processes  
 
-## What to Do Next
+Since all processes are pinned to the same CPU core, the scheduling effect becomes clearly visible.
 
-Read [`project-guide.md`](project-guide.md) end to end. It contains:
+### Conclusion
 
-- The six implementation tasks (multi-container runtime, CLI, logging, kernel monitor, scheduling experiments, cleanup)
-- The engineering analysis you must write
-- The exact submission requirements, including what your `README.md` must contain (screenshots, analysis, design decisions)
-
-Your fork's `README.md` should be replaced with your own project documentation as described in the submission package section of the project guide. (As in get rid of all the above content and replace with your README.md)
+The results confirm that Linux uses priority-based scheduling, where lower-priority processes receive reduced CPU time compared to higher-priority processes.
