@@ -5,15 +5,76 @@
 - **Ipsa Mishra** – PES1UG24CS191  
 - **Janhavi Ramakrishnan** – PES1UG24CS198  
 
-### 2. Set Up Your VM
+### 2. Build, Load, and Run Instructions
 
-You need an **Ubuntu 22.04 or 24.04** VM with **Secure Boot OFF**. WSL will not work.
+**Build The Project**
+```bash 
+make
+```
 
-Install dependencies:
-
+**Load Kernel Module**
 ```bash
-sudo apt update
-sudo apt install -y build-essential linux-headers-$(uname -r)
+sudo insmod monitor.ko
+```
+
+**Start Supervisor**
+```bash
+sudo ./engine supervisor ./rootfs-base
+```
+
+**Prepare Container Root Filesystems**
+```bash
+cp -a ./rootfs-base ./rootfs-alpha
+cp -a ./rootfs-base ./rootfs-beta
+```
+
+**Launch Containers**
+```bash
+sudo ./engine start alpha ./rootfs-alpha /bin/sh --soft-mib 48 --hard-mib 80
+sudo ./engine start beta ./rootfs-beta /bin/sh --soft-mib 64 --hard-mib 96
+```
+
+**CLI Operations**
+```bash
+sudo ./engine ps
+sudo ./engine logs alpha
+```
+
+**Run Workloads**
+Memory Test
+```bash
+./memory_hog
+```
+Run CPU-intensive workloads:
+```bash
+yes > /dev/null &
+yes > /dev/null &
+```
+Change priority of one process:
+```bash
+renice +10 <PID>
+```
+Observe CPU allocation differences using:
+```bash
+top -o %CPU
+```
+
+**Stop Containers**
+```bash
+sudo ./engine stop alpha
+sudo ./engine stop beta
+```
+
+**Inspect Kernel Logs**
+```bash
+dmesg | tail
+```
+
+**Cleanup**
+```bash
+pkill yes
+pkill cpu_hog
+pkill memory_hog
 ```
 
 ### 3. Run the Environment Check
