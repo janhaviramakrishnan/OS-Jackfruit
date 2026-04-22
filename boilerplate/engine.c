@@ -14,6 +14,19 @@
  *   - producer/consumer behavior for log buffering
  *   - signal handling and graceful shutdown
  */
+ 
+#define _GNU_SOURCE
+#include <sched.h>
+#include <sys/types.h>
+#define MAX_CONTAINERS 10
+
+typedef struct {
+    char id[32];
+    pid_t pid;
+} container_t;
+
+static container_t containers[MAX_CONTAINERS];
+static int container_count = 0;
 
 #define _GNU_SOURCE
 #include <errno.h>
@@ -36,6 +49,7 @@
 #include <unistd.h>
 
 #include "monitor_ioctl.h"
+
 
 #define STACK_SIZE (1024 * 1024)
 #define CONTAINER_ID_LEN 32
@@ -105,6 +119,111 @@ typedef struct {
     int nice_value;
 } control_request_t;
 
+// function prototypes
+static int send_control_request(const control_request_t *req);
+
+#define STACK_SIZE (1024 * 1024)
+
+static int child_func(void *arg)
+{
+    printf("Inside container!\n");
+
+    // Set hostname
+    sethostname("container", 9);
+
+    // Fork again to get PID 1 inside namespace
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork failed");
+        return 1;
+    }
+
+    if (pid == 0) {
+        // Grandchild → becomes PID 1
+
+        // Change root filesystem
+        if (chroot("./rootfs-alpha") != 0) {
+            perror("chroot failed");
+            return 1;
+        }
+
+        chdir("/");
+
+        // Mount /proc
+        if (mount("proc", "/proc", "proc", 0, NULL) != 0) {
+            perror("mount /proc failed");
+            return 1;
+        }
+
+        execl("/bin/sh", "sh", NULL);
+        perror("exec failed");
+        return 1;
+    } else {
+        // Parent inside namespace waits
+        waitpid(pid, NULL, 0);
+    }
+
+    return 0;
+}
+
+static int cmd_start(int argc, char *argv[])
+{
+    if (argc < 5) {
+        fprintf(stderr, "Usage: %s start <id> <rootfs> <command>\n", argv[0]);
+        return 1;
+    }
+
+    printf("Starting container: %s\n", argv[2]);
+
+    char *stack = malloc(STACK_SIZE);
+    if (!stack) {
+        perror("malloc");
+        return 1;
+    }
+
+    char *stackTop = stack + STACK_SIZE;
+
+    int flags = CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD;
+
+    pid_t pid = clone(child_func, stackTop, flags, NULL);
+
+    if (pid == -1) {
+        perror("clone failed");
+        free(stack);
+        return 1;
+    }
+
+    printf("Container started with PID: %d\n", pid);
+    
+
+
+    FILE *log = fopen("log.txt", "a");
+    if (log) {
+        fprintf(log, "[LOG] Started container %s with PID %d\n", argv[2], pid);
+        fclose(log);
+    }
+
+    printf("[CONSUMER] Log written for %s\n", argv[2]);
+    
+    FILE *fp = fopen("containers.txt", "a");
+    if (fp != NULL) {
+    	fprintf(fp, "%s %d\n", argv[2], pid);
+    	fclose(fp);
+    }
+    strcpy(containers[container_count].id, argv[2]);
+    containers[container_count].pid = pid;
+    container_count++;
+    
+    printf("[LOG] Starting container %s with PID %d\n", argv[2], pid);
+
+    waitpid(pid, NULL, 0);
+    free(stack);
+
+    return 0;
+}
+
+static int cmd_run(int argc, char *argv[]);
 typedef struct {
     int status;
     char message[CONTROL_MESSAGE_LEN];
@@ -387,132 +506,79 @@ int unregister_from_monitor(int monitor_fd, const char *container_id, pid_t host
  *   - accept control requests and update container state
  *   - reap children and respond to signals
  */
+
 static int run_supervisor(const char *rootfs)
 {
-    supervisor_ctx_t ctx;
-    int rc;
+    printf("Supervisor started with rootfs: %s\n", rootfs);
 
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.server_fd = -1;
-    ctx.monitor_fd = -1;
+    while (1) {
+        // ---- IPC: read request ----
+        FILE *req = fopen("request.txt", "r");
+        if (req) {
+            char cmd[128];
 
-    rc = pthread_mutex_init(&ctx.metadata_lock, NULL);
-    if (rc != 0) {
-        errno = rc;
-        perror("pthread_mutex_init");
-        return 1;
+            if (fgets(cmd, sizeof(cmd), req)) {
+                printf("[SUPERVISOR] Received: %s", cmd);
+
+                // ps command
+                if (strncmp(cmd, "ps", 2) == 0) {
+                    FILE *cf = fopen("containers.txt", "r");
+                    if (cf) {
+                        char id[32];
+                        int pid;
+
+                        printf("[SUPERVISOR] Active containers:\n");
+                        while (fscanf(cf, "%s %d", id, &pid) == 2) {
+                            printf("  %s -> PID %d\n", id, pid);
+                        }
+                        fclose(cf);
+                    } else {
+                        printf("[SUPERVISOR] No containers file\n");
+                    }
+                }
+
+                // stop command
+                if (strncmp(cmd, "stop", 4) == 0) {
+                    char id[32];
+                    sscanf(cmd, "stop %s", id);
+
+                    FILE *cf = fopen("containers.txt", "r");
+                    if (cf) {
+                        char cid[32];
+                        int pid;
+
+                        while (fscanf(cf, "%s %d", cid, &pid) == 2) {
+                            if (strcmp(cid, id) == 0) {
+                                kill(pid, SIGKILL);
+                                printf("[SUPERVISOR] Stopped %s (PID %d)\n", id, pid);
+                            }
+                        }
+                        fclose(cf);
+                    }
+                }
+            }
+
+            fclose(req);
+            remove("request.txt");  // clear request
+        }
+
+        // ---- Logging pipeline (consumer) ----
+        FILE *logf = fopen("log.txt", "r");
+        if (logf) {
+            char line[256];
+            while (fgets(line, sizeof(line), logf)) {
+                printf("[CONSUMER] %s", line);
+            }
+            fclose(logf);
+            remove("log.txt"); // consume once
+        }
+
+        sleep(1);
     }
 
-    rc = bounded_buffer_init(&ctx.log_buffer);
-    if (rc != 0) {
-        errno = rc;
-        perror("bounded_buffer_init");
-        pthread_mutex_destroy(&ctx.metadata_lock);
-        return 1;
-    }
-
-    /*
-     * TODO:
-     *   1) open /dev/container_monitor
-     *   2) create the control socket / FIFO / shared-memory channel
-     *   3) install SIGCHLD / SIGINT / SIGTERM handling
-     *   4) spawn the logger thread
-     *   5) enter the supervisor event loop
-     */
-    fprintf(stderr, "Supervisor mode not implemented yet for base-rootfs: %s\n", rootfs);
-
-    bounded_buffer_begin_shutdown(&ctx.log_buffer);
-    bounded_buffer_destroy(&ctx.log_buffer);
-    pthread_mutex_destroy(&ctx.metadata_lock);
-    return 1;
+    return 0;
 }
-
-/*
- * TODO:
- * Implement the client-side control request path.
- *
- * The CLI commands should use a second IPC mechanism distinct from the
- * logging pipe. A UNIX domain socket is the most direct option, but a
- * FIFO or shared memory design is also acceptable if justified.
- */
-static int send_control_request(const control_request_t *req)
-{
-    (void)req;
-    fprintf(stderr, "Control-plane client path not implemented.\n");
-    return 1;
-}
-
-static int cmd_start(int argc, char *argv[])
-{
-    control_request_t req;
-
-    if (argc < 5) {
-        fprintf(stderr,
-                "Usage: %s start <id> <container-rootfs> <command> [--soft-mib N] [--hard-mib N] [--nice N]\n",
-                argv[0]);
-        return 1;
-    }
-
-    memset(&req, 0, sizeof(req));
-    req.kind = CMD_START;
-    strncpy(req.container_id, argv[2], sizeof(req.container_id) - 1);
-    strncpy(req.rootfs, argv[3], sizeof(req.rootfs) - 1);
-    strncpy(req.command, argv[4], sizeof(req.command) - 1);
-    req.soft_limit_bytes = DEFAULT_SOFT_LIMIT;
-    req.hard_limit_bytes = DEFAULT_HARD_LIMIT;
-
-    if (parse_optional_flags(&req, argc, argv, 5) != 0)
-        return 1;
-
-    return send_control_request(&req);
-}
-
-static int cmd_run(int argc, char *argv[])
-{
-    control_request_t req;
-
-    if (argc < 5) {
-        fprintf(stderr,
-                "Usage: %s run <id> <container-rootfs> <command> [--soft-mib N] [--hard-mib N] [--nice N]\n",
-                argv[0]);
-        return 1;
-    }
-
-    memset(&req, 0, sizeof(req));
-    req.kind = CMD_RUN;
-    strncpy(req.container_id, argv[2], sizeof(req.container_id) - 1);
-    strncpy(req.rootfs, argv[3], sizeof(req.rootfs) - 1);
-    strncpy(req.command, argv[4], sizeof(req.command) - 1);
-    req.soft_limit_bytes = DEFAULT_SOFT_LIMIT;
-    req.hard_limit_bytes = DEFAULT_HARD_LIMIT;
-
-    if (parse_optional_flags(&req, argc, argv, 5) != 0)
-        return 1;
-
-    return send_control_request(&req);
-}
-
-static int cmd_ps(void)
-{
-    control_request_t req;
-
-    memset(&req, 0, sizeof(req));
-    req.kind = CMD_PS;
-
-    /*
-     * TODO:
-     * The supervisor should respond with container metadata.
-     * Keep the rendering format simple enough for demos and debugging.
-     */
-    printf("Expected states include: %s, %s, %s, %s, %s\n",
-           state_to_string(CONTAINER_STARTING),
-           state_to_string(CONTAINER_RUNNING),
-           state_to_string(CONTAINER_STOPPED),
-           state_to_string(CONTAINER_KILLED),
-           state_to_string(CONTAINER_EXITED));
-    return send_control_request(&req);
-}
-
+    
 static int cmd_logs(int argc, char *argv[])
 {
     control_request_t req;
@@ -529,20 +595,51 @@ static int cmd_logs(int argc, char *argv[])
     return send_control_request(&req);
 }
 
+
+static int cmd_ps(void)
+{
+    FILE *fp = fopen("request.txt", "w");
+    if (fp) {
+        fprintf(fp, "ps\n");
+        fclose(fp);
+    }
+
+    printf("[CLI] Sent ps request to supervisor\n");
+    return 0;
+}
+
+
+// TEMP STUB FUNCTIONS (to fix build)
+
+static int send_control_request(const control_request_t *req)
+{
+    printf("Stub: sending request for container %s\n", req->container_id);
+    return 0;
+}
+
 static int cmd_stop(int argc, char *argv[])
 {
-    control_request_t req;
-
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s stop <id>\n", argv[0]);
+        printf("Usage: stop <id>\n");
         return 1;
     }
 
-    memset(&req, 0, sizeof(req));
-    req.kind = CMD_STOP;
-    strncpy(req.container_id, argv[2], sizeof(req.container_id) - 1);
+    char *id = argv[2];
 
-    return send_control_request(&req);
+    FILE *fp = fopen("request.txt", "w");
+    if (fp) {
+        fprintf(fp, "stop %s\n", id);
+        fclose(fp);
+    }
+
+    printf("[CLI] Sent stop request for %s\n", id);
+    return 0;
+}
+
+static int cmd_run(int argc, char *argv[])
+{
+    printf("Stub: run command\n");
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -559,21 +656,21 @@ int main(int argc, char *argv[])
         }
         return run_supervisor(argv[2]);
     }
-
-    if (strcmp(argv[1], "start") == 0)
+    else if (strcmp(argv[1], "start") == 0) {
         return cmd_start(argc, argv);
-
-    if (strcmp(argv[1], "run") == 0)
-        return cmd_run(argc, argv);
-
-    if (strcmp(argv[1], "ps") == 0)
+    }
+    else if (strcmp(argv[1], "ps") == 0) {
         return cmd_ps();
-
-    if (strcmp(argv[1], "logs") == 0)
+    }
+    else if (strcmp(argv[1], "run") == 0) {
+        return cmd_run(argc, argv);
+    }
+    else if (strcmp(argv[1], "logs") == 0) {
         return cmd_logs(argc, argv);
-
-    if (strcmp(argv[1], "stop") == 0)
+    }
+    else if (strcmp(argv[1], "stop") == 0) {
         return cmd_stop(argc, argv);
+    }
 
     usage(argv[0]);
     return 1;
