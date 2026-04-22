@@ -90,9 +90,9 @@ Two containers (alpha and beta) successfully running under a single supervisor p
 Metadata tracking showing active containers and their corresponding process IDs using the ps command
 
 **3. Bounded-buffer Logging**
-<img width="940" height="254" alt="image" src="https://github.com/user-attachments/assets/faae66a8-ad4c-46e2-bffd-45a08913774b" />
+<img width="1280" height="800" alt="ss3_new" src="https://github.com/user-attachments/assets/7bce2fc7-eeae-4f62-badf-803d4a7f7502" />
 
-Log file contents captured through a producer-consumer style logging pipeline, demonstrating bounded-buffer logging behaviour
+Terminal 1 shows the bounded-buffer pipeline in operation — the logger thread starts, producer threads insert log chunks (buffer count rising), and the consumer thread drains them to persistent log files (count falling back to 0)
 
 **4. CLI and IPC**
 <img width="940" height="429" alt="image" src="https://github.com/user-attachments/assets/ba9e24cb-e08c-40e3-8412-3aad9d00a149" />
