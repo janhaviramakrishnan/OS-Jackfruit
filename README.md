@@ -90,7 +90,7 @@ Two containers (alpha and beta) successfully running under a single supervisor p
 Metadata tracking showing active containers and their corresponding process IDs using the ps command
 
 **3. Bounded-buffer Logging**
-<img width="1280" height="800" alt="ss3_new" src="https://github.com/user-attachments/assets/7bce2fc7-eeae-4f62-badf-803d4a7f7502" />
+<img width="1280" height="800" alt="ss3_new" src="https://github.com/user-attachments/assets/834367b9-acb2-4fe3-908d-804d3880367b" />
 
 Terminal 1 shows the bounded-buffer pipeline in operation — the logger thread starts, producer threads insert log chunks (buffer count rising), and the consumer thread drains them to persistent log files (count falling back to 0)
 
